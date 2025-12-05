@@ -57,6 +57,9 @@ def load_models_background():
     """Carga los modelos de PaddleOCR en segundo plano"""
     global paddle, paddleocr, DocImgOrientationClassification, models_loaded, models_loading, models_error
 
+    # Esperar 2 segundos para que Flask arranque primero
+    time.sleep(2)
+
     models_loading = True
     logger.info("[MODELS] Iniciando carga de modelos en segundo plano...")
 
@@ -75,6 +78,13 @@ def load_models_background():
         from paddleocr import DocImgOrientationClassification as _DocImgOrientationClassification
         DocImgOrientationClassification = _DocImgOrientationClassification
         logger.info("[MODELS] DocImgOrientationClassification importado OK")
+
+        # Ahora inicializar los preprocesadores
+        logger.info("[MODELS] Inicializando DocPreprocessor...")
+        init_docpreprocessor()
+
+        logger.info("[MODELS] Inicializando OCR...")
+        init_ocr()
 
         models_loaded = True
         models_loading = False
@@ -229,11 +239,10 @@ def init_ocr():
         ocr_initialized = False
         return False
 
-# Forzar inicializacion al inicio
-logger.info("[START] Iniciando PaddlePaddle CPU Document Preprocessor...")
-init_docpreprocessor()
-logger.info("[START] Iniciando PaddleOCR...")
-init_ocr()
+# LAZY LOADING: No forzar inicializacion al inicio
+# Los modelos se cargan en segundo plano via load_models_background()
+# init_docpreprocessor() y init_ocr() se llaman cuando se necesiten
+logger.info("[START] Inicializacion diferida activada - modelos se cargan en segundo plano")
 
 
 def find_inner_rectangle(contour, image_shape, config):
