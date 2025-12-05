@@ -5,6 +5,7 @@ PaddlePaddle CPU Document Preprocessor
 Prepara documentos para OCR con deteccion de orientacion y correccion
 
 LAZY LOADING: Flask arranca primero, modelos se cargan después
+DEBUG MODE: Logging extensivo para diagnosticar problemas de arranque
 """
 
 import os
@@ -16,6 +17,8 @@ import time
 import math
 import tempfile
 import threading
+import signal
+import traceback
 from pathlib import Path
 from flask import Flask, request, jsonify
 
@@ -29,21 +32,63 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
+# Función para obtener uso de memoria
+def get_memory_usage():
+    """Retorna uso de memoria en MB"""
+    try:
+        import resource
+        mem = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024  # KB to MB
+        return f"{mem:.1f}MB"
+    except:
+        try:
+            # Alternativa: leer /proc/self/status
+            with open('/proc/self/status', 'r') as f:
+                for line in f:
+                    if line.startswith('VmRSS:'):
+                        mem_kb = int(line.split()[1])
+                        return f"{mem_kb/1024:.1f}MB"
+        except:
+            return "N/A"
+    return "N/A"
+
+# Manejador de señales para debug
+def signal_handler(signum, frame):
+    sig_name = signal.Signals(signum).name
+    logger.error(f"[SIGNAL] Recibida señal {sig_name} ({signum})")
+    logger.error(f"[SIGNAL] Stack trace:\n{traceback.format_stack(frame)}")
+    sys.exit(1)
+
+# Registrar manejadores de señales
+for sig in [signal.SIGTERM, signal.SIGINT]:
+    signal.signal(sig, signal_handler)
+
+logger.info(f"[STARTUP] ========== INICIANDO PADDLEOCR V3 ==========")
+logger.info(f"[STARTUP] Memoria inicial: {get_memory_usage()}")
+logger.info(f"[STARTUP] Python: {sys.version}")
+logger.info(f"[STARTUP] PID: {os.getpid()}")
+
 # CONFIGURAR DIRECTORIOS PADDLE ANTES DE IMPORTAR
 os.environ['PADDLE_HOME'] = '/home/n8n/.paddleocr'
 os.environ['PADDLEX_HOME'] = '/home/n8n/.paddlex'
 os.environ['HOME'] = '/home/n8n'
 
-logger.info("[STARTUP] Iniciando servidor Flask (lazy loading activado)...")
+logger.info("[STARTUP] Variables de entorno configuradas")
+logger.info(f"[STARTUP] PADDLE_HOME: {os.environ.get('PADDLE_HOME')}")
+logger.info(f"[STARTUP] PADDLEX_HOME: {os.environ.get('PADDLEX_HOME')}")
 
 # Imports básicos (rápidos)
+logger.info("[STARTUP] Importando OpenCV...")
 import cv2
+logger.info(f"[STARTUP] OpenCV {cv2.__version__} OK - Memoria: {get_memory_usage()}")
+
+logger.info("[STARTUP] Importando NumPy...")
 import numpy as np
-logger.info("[STARTUP] OpenCV y NumPy importados OK")
+logger.info(f"[STARTUP] NumPy {np.__version__} OK - Memoria: {get_memory_usage()}")
 
 # Flask arranca PRIMERO
+logger.info("[STARTUP] Creando Flask app...")
 app = Flask(__name__)
-logger.info("[STARTUP] Flask app creada - servidor listo para healthcheck")
+logger.info(f"[STARTUP] Flask app creada - Memoria: {get_memory_usage()}")
 
 # Variables globales para lazy loading
 paddle = None
@@ -52,52 +97,59 @@ DocImgOrientationClassification = None
 models_loaded = False
 models_loading = False
 models_error = None
+startup_time = time.time()
 
 def load_models_background():
     """Carga los modelos de PaddleOCR en segundo plano"""
     global paddle, paddleocr, DocImgOrientationClassification, models_loaded, models_loading, models_error
 
-    # Esperar 2 segundos para que Flask arranque primero
-    time.sleep(2)
+    # Esperar 5 segundos para que Waitress arranque completamente
+    logger.info("[MODELS] Esperando 5 segundos antes de cargar modelos...")
+    time.sleep(5)
+
+    logger.info(f"[MODELS] Memoria antes de cargar: {get_memory_usage()}")
 
     models_loading = True
-    logger.info("[MODELS] Iniciando carga de modelos en segundo plano...")
+    logger.info("[MODELS] ========== INICIANDO CARGA DE MODELOS ==========")
 
     try:
-        logger.info("[MODELS] Importando paddle...")
+        logger.info("[MODELS] Paso 1/5: Importando paddle...")
         import paddle as _paddle
         paddle = _paddle
-        logger.info(f"[MODELS] Paddle version: {paddle.__version__}")
+        logger.info(f"[MODELS] Paddle {paddle.__version__} importado - Memoria: {get_memory_usage()}")
 
-        logger.info("[MODELS] Importando paddleocr...")
+        logger.info("[MODELS] Paso 2/5: Importando paddleocr...")
         import paddleocr as _paddleocr
         paddleocr = _paddleocr
-        logger.info(f"[MODELS] PaddleOCR version: {paddleocr.__version__}")
+        logger.info(f"[MODELS] PaddleOCR {paddleocr.__version__} importado - Memoria: {get_memory_usage()}")
 
-        logger.info("[MODELS] Importando DocImgOrientationClassification...")
+        logger.info("[MODELS] Paso 3/5: Importando DocImgOrientationClassification...")
         from paddleocr import DocImgOrientationClassification as _DocImgOrientationClassification
         DocImgOrientationClassification = _DocImgOrientationClassification
-        logger.info("[MODELS] DocImgOrientationClassification importado OK")
+        logger.info(f"[MODELS] DocImgOrientationClassification importado - Memoria: {get_memory_usage()}")
 
         # Ahora inicializar los preprocesadores
-        logger.info("[MODELS] Inicializando DocPreprocessor...")
+        logger.info("[MODELS] Paso 4/5: Inicializando DocPreprocessor...")
         init_docpreprocessor()
+        logger.info(f"[MODELS] DocPreprocessor OK - Memoria: {get_memory_usage()}")
 
-        logger.info("[MODELS] Inicializando OCR...")
+        logger.info("[MODELS] Paso 5/5: Inicializando OCR...")
         init_ocr()
+        logger.info(f"[MODELS] OCR OK - Memoria: {get_memory_usage()}")
 
         models_loaded = True
         models_loading = False
-        logger.info("[MODELS] *** TODOS LOS MODELOS CARGADOS CORRECTAMENTE ***")
+        logger.info("[MODELS] ========== TODOS LOS MODELOS CARGADOS ==========")
+        logger.info(f"[MODELS] Memoria final: {get_memory_usage()}")
 
     except Exception as e:
         models_error = str(e)
         models_loading = False
-        logger.error(f"[MODELS] Error cargando modelos: {e}")
+        logger.error(f"[MODELS] ERROR cargando modelos: {e}")
+        logger.error(f"[MODELS] Traceback:\n{traceback.format_exc()}")
 
-# Iniciar carga de modelos en segundo plano
-threading.Thread(target=load_models_background, daemon=True).start()
-logger.info("[STARTUP] Hilo de carga de modelos iniciado")
+# NO iniciar el hilo aquí - lo haremos después de que Waitress arranque
+logger.info("[STARTUP] Carga de modelos diferida hasta después del arranque del servidor")
 
 # Variables configurables desde ENV
 OPENCV_CONFIG = {
@@ -1654,12 +1706,17 @@ def compose_pdf_ocr(base_source, ocr_data, output_spdf, is_scanned):
 @app.route('/health')
 def health():
     """Health check - responde inmediatamente para evitar reinicios"""
-    global models_loaded, models_loading, models_error
+    global models_loaded, models_loading, models_error, startup_time
+
+    uptime = time.time() - startup_time
+    memory = get_memory_usage()
 
     # Siempre responde healthy para que EasyPanel no reinicie
     # El estado real se muestra en los campos adicionales
     return jsonify({
         'status': 'healthy',
+        'uptime_seconds': round(uptime, 1),
+        'memory_usage': memory,
         'models_loaded': models_loaded,
         'models_loading': models_loading,
         'models_error': models_error,
@@ -2337,20 +2394,43 @@ def analyze():
 # FIN DE CAPA API REST AÑADIDA
 # ============================================================================
 
+def start_model_loading():
+    """Inicia la carga de modelos en segundo plano"""
+    logger.info("[STARTUP] Iniciando hilo de carga de modelos...")
+    model_thread = threading.Thread(target=load_models_background, daemon=True)
+    model_thread.start()
+    logger.info("[STARTUP] Hilo de carga de modelos iniciado")
+
 if __name__ == '__main__':
     port = int(os.getenv('FLASK_PORT', '8503'))
-    logger.info("[START] Iniciando PaddlePaddle CPU Document Preprocessor + API REST...")
+    logger.info("")
+    logger.info("=" * 60)
+    logger.info("[START] PADDLEOCR V3 FUSION - WEBCOMUNICA")
+    logger.info("=" * 60)
+    logger.info(f"[START] Puerto: {port}")
+    logger.info(f"[START] Memoria: {get_memory_usage()}")
+    logger.info(f"[START] PID: {os.getpid()}")
     logger.info("[START] Proyecto base: paddlepaddle_paco")
     logger.info("[START] Capa API: webcomunica REST layer")
+
+    # Iniciar carga de modelos en segundo plano ANTES del servidor
+    start_model_loading()
 
     # Detectar si estamos en produccion
     if os.getenv('FLASK_ENV') == 'production':
         from waitress import serve
-        logger.info("[READY] Iniciando servidor Waitress (produccion)")
+        logger.info("")
+        logger.info("[READY] *** SERVIDOR WAITRESS INICIANDO ***")
+        logger.info(f"[READY] URL: http://0.0.0.0:{port}")
+        logger.info("[READY] Health check disponible en /health")
+        logger.info("[READY] Los modelos se cargan en segundo plano...")
+        logger.info("")
+        # Waitress bloqueará aquí - el servidor estará corriendo
         serve(app, host='0.0.0.0', port=port, threads=4)
     else:
         logger.info("[READY] Iniciando servidor Flask (desarrollo)")
         app.run(host='0.0.0.0', port=port, debug=False)
 
-    logger.info(f"[READY] Servidor listo en puerto {port}")
+    # Este código solo se ejecuta si el servidor termina
+    logger.info("[SHUTDOWN] Servidor terminado")
 
