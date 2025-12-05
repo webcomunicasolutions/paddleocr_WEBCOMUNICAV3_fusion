@@ -2413,8 +2413,9 @@ if __name__ == '__main__':
     logger.info("[START] Proyecto base: paddlepaddle_paco")
     logger.info("[START] Capa API: webcomunica REST layer")
 
-    # Iniciar carga de modelos en segundo plano ANTES del servidor
-    start_model_loading()
+    # NO cargar modelos automáticamente - se cargarán con la primera petición OCR
+    # Esto permite que el contenedor arranque rápido y sobreviva en EasyPanel
+    logger.info("[STARTUP] Modelos se cargarán con la primera petición OCR (on-demand)")
 
     # Detectar si estamos en produccion
     if os.getenv('FLASK_ENV') == 'production':
@@ -2422,8 +2423,9 @@ if __name__ == '__main__':
         logger.info("")
         logger.info("[READY] *** SERVIDOR WAITRESS INICIANDO ***")
         logger.info(f"[READY] URL: http://0.0.0.0:{port}")
-        logger.info("[READY] Health check disponible en /health")
-        logger.info("[READY] Los modelos se cargan en segundo plano...")
+        logger.info("[READY] Health check: /health")
+        logger.info("[READY] Dashboard: /")
+        logger.info("[READY] Modelos: se cargan on-demand (primera petición)")
         logger.info("")
         # Waitress bloqueará aquí - el servidor estará corriendo
         serve(app, host='0.0.0.0', port=port, threads=4)
