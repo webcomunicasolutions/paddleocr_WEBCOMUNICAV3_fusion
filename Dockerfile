@@ -45,9 +45,13 @@ COPY app.py /app/
 # Exponer puerto
 EXPOSE 8503
 
-# DESACTIVAR HEALTHCHECK - EasyPanel reinicia el contenedor antes de que PaddlePaddle cargue
-# PaddlePaddle tarda ~2 minutos en importarse, el healthcheck por defecto mata el contenedor
-HEALTHCHECK NONE
+# HEALTHCHECK muy permisivo para que EasyPanel no reinicie durante carga de PaddlePaddle
+# - start-period: 300s (5 minutos) antes de empezar a verificar
+# - interval: 60s entre verificaciones
+# - timeout: 30s para responder
+# - retries: 10 intentos antes de marcar unhealthy
+HEALTHCHECK --interval=60s --timeout=30s --start-period=300s --retries=10 \
+    CMD curl -f http://localhost:8503/health || exit 0
 
 # Comando por defecto
 CMD ["python", "app.py"]
