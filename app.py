@@ -3,6 +3,8 @@
 """
 PaddlePaddle CPU Document Preprocessor
 Prepara documentos para OCR con deteccion de orientacion y correccion
+
+LAZY LOADING: Flask arranca primero, modelos se cargan después
 """
 
 import os
@@ -13,8 +15,7 @@ import logging
 import time
 import math
 import tempfile
-import cv2
-import numpy as np
+import threading
 from pathlib import Path
 from flask import Flask, request, jsonify
 
@@ -26,58 +27,67 @@ logging.basicConfig(
     force=True
 )
 logger = logging.getLogger(__name__)
-
 logger.setLevel(logging.DEBUG)
-
-logger.info("[DEBUG] Iniciando imports...")
 
 # CONFIGURAR DIRECTORIOS PADDLE ANTES DE IMPORTAR
 os.environ['PADDLE_HOME'] = '/home/n8n/.paddleocr'
 os.environ['PADDLEX_HOME'] = '/home/n8n/.paddlex'
-# Forzar directorio home para evitar problemas
 os.environ['HOME'] = '/home/n8n'
 
-logger.info("[DEBUG] Variables de entorno configuradas")
+logger.info("[STARTUP] Iniciando servidor Flask (lazy loading activado)...")
 
-try:
-    import cv2
-    logger.info("[DEBUG] OpenCV importado OK")
-except Exception as e:
-    logger.error(f"[DEBUG] Error importando OpenCV: {e}")
+# Imports básicos (rápidos)
+import cv2
+import numpy as np
+logger.info("[STARTUP] OpenCV y NumPy importados OK")
 
-try:
-    import numpy as np
-    logger.info("[DEBUG] NumPy importado OK")
-except Exception as e:
-    logger.error(f"[DEBUG] Error importando NumPy: {e}")
-
-logger.info("[DEBUG] Imports basicos completados")
-
-# DIAGNOSTICO: Importar PaddleOCR paso a paso
-try:
-    logger.info("[DEBUG] Importando paddle...")
-    import paddle
-    logger.info(f"[DEBUG] Paddle version: {paddle.__version__}")
-    logger.info(f"[DEBUG] Paddle device: {paddle.device.get_device()}")
-except Exception as e:
-    logger.error(f"[DEBUG] Error importando paddle: {e}")
-
-try:
-    logger.info("[DEBUG] Importando paddleocr...")
-    import paddleocr
-    logger.info(f"[DEBUG] PaddleOCR version: {paddleocr.__version__}")
-except Exception as e:
-    logger.error(f"[DEBUG] Error importando paddleocr: {e}")
-
-try:
-    logger.info("[DEBUG] Importando DocImgOrientationClassification...")
-    from paddleocr import DocImgOrientationClassification
-    logger.info("[DEBUG] DocImgOrientationClassification importado OK")
-except Exception as e:
-    logger.error(f"[DEBUG] Error importando DocImgOrientationClassification: {e}")
-
+# Flask arranca PRIMERO
 app = Flask(__name__)
-logger.info("[DEBUG] Flask app creada")
+logger.info("[STARTUP] Flask app creada - servidor listo para healthcheck")
+
+# Variables globales para lazy loading
+paddle = None
+paddleocr = None
+DocImgOrientationClassification = None
+models_loaded = False
+models_loading = False
+models_error = None
+
+def load_models_background():
+    """Carga los modelos de PaddleOCR en segundo plano"""
+    global paddle, paddleocr, DocImgOrientationClassification, models_loaded, models_loading, models_error
+
+    models_loading = True
+    logger.info("[MODELS] Iniciando carga de modelos en segundo plano...")
+
+    try:
+        logger.info("[MODELS] Importando paddle...")
+        import paddle as _paddle
+        paddle = _paddle
+        logger.info(f"[MODELS] Paddle version: {paddle.__version__}")
+
+        logger.info("[MODELS] Importando paddleocr...")
+        import paddleocr as _paddleocr
+        paddleocr = _paddleocr
+        logger.info(f"[MODELS] PaddleOCR version: {paddleocr.__version__}")
+
+        logger.info("[MODELS] Importando DocImgOrientationClassification...")
+        from paddleocr import DocImgOrientationClassification as _DocImgOrientationClassification
+        DocImgOrientationClassification = _DocImgOrientationClassification
+        logger.info("[MODELS] DocImgOrientationClassification importado OK")
+
+        models_loaded = True
+        models_loading = False
+        logger.info("[MODELS] *** TODOS LOS MODELOS CARGADOS CORRECTAMENTE ***")
+
+    except Exception as e:
+        models_error = str(e)
+        models_loading = False
+        logger.error(f"[MODELS] Error cargando modelos: {e}")
+
+# Iniciar carga de modelos en segundo plano
+threading.Thread(target=load_models_background, daemon=True).start()
+logger.info("[STARTUP] Hilo de carga de modelos iniciado")
 
 # Variables configurables desde ENV
 OPENCV_CONFIG = {
@@ -1634,11 +1644,18 @@ def compose_pdf_ocr(base_source, ocr_data, output_spdf, is_scanned):
 
 @app.route('/health')
 def health():
-    """Health check"""
+    """Health check - responde inmediatamente para evitar reinicios"""
+    global models_loaded, models_loading, models_error
+
+    # Siempre responde healthy para que EasyPanel no reinicie
+    # El estado real se muestra en los campos adicionales
     return jsonify({
-        'status': 'healthy' if (doc_preprocessor and ocr_initialized) else 'initializing',
-        'preprocessor_ready': doc_preprocessor is not None,
-        'ocr_ready': ocr_initialized,
+        'status': 'healthy',
+        'models_loaded': models_loaded,
+        'models_loading': models_loading,
+        'models_error': models_error,
+        'preprocessor_ready': doc_preprocessor is not None if models_loaded else False,
+        'ocr_ready': ocr_initialized if models_loaded else False,
         'opencv_config': OPENCV_CONFIG,
         'rotation_config': ROTATION_CONFIG
     })
