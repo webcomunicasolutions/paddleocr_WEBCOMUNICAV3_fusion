@@ -1765,7 +1765,7 @@ def ocr():
             except ValueError:
                 logger.warning(f"[OCR] Valor invalido para min_angle: {min_angle_param}")
         else:
-            ROTATION_CONFIG['MIN_SKEW_ANGLE'] = float(os.getenv('ROTATION_MIN_SKEW_ANGLE'))
+            ROTATION_CONFIG['MIN_SKEW_ANGLE'] = float(os.getenv('ROTATION_MIN_SKEW_ANGLE', '0.2'))
 
         # VERIFICAR Y CARGAR MODELOS SI ES NECESARIO
         if not doc_preprocessor:
