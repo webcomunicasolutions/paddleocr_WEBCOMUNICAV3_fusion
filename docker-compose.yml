@@ -1,0 +1,86 @@
+version: '3.8'
+
+services:
+  paddlepaddle-cpu:
+    build: .
+    container_name: paddlepaddle-cpu
+    restart: unless-stopped
+    network_mode: bridge
+    ports:
+      - "8503:8503"
+    volumes:
+      # Integración n8n (REQUERIDO para endpoints /ocr y n8n)
+      - /home/n8n:/home/n8n
+
+      # Modelos PaddleOCR y PaddleX (cache persistente)
+      - paddlex-models:/home/n8n/.paddlex
+      - paddleocr-models:/home/n8n/.paddleocr
+
+      # OPCIONAL: Si quieres datos adicionales en /app/data
+      # - /home/n8n/paddleocr-final/data/:/app/data/
+    shm_size: 8g
+    user: "root"
+    environment:
+      - TZ=Europe/Madrid
+
+      # Flask
+      - FLASK_ENV=production
+      - FLASK_PORT=8503
+
+      # Variables OpenCV
+      - OPENCV_HSV_LOWER_H=0
+      - OPENCV_HSV_LOWER_S=0
+      - OPENCV_HSV_LOWER_V=140
+      - OPENCV_HSV_UPPER_H=180
+      - OPENCV_HSV_UPPER_S=60
+      - OPENCV_HSV_UPPER_V=255
+      - OPENCV_MIN_AREA_PERCENT=0.05
+      - OPENCV_EPSILON_FACTOR=0.01
+      - OPENCV_ERODE_ITERATIONS=1
+      - OPENCV_DILATE_ITERATIONS=2
+      - OPENCV_MIN_WIDTH=300
+      - OPENCV_MIN_HEIGHT=400
+      - OPENCV_EROSION_PERCENT=0.085
+      - OPENCV_INNER_SCALE_FACTOR=1.06
+
+      # Variables de rotacion
+      - ROTATION_MIN_CONFIDENCE=0.7
+      - ROTATION_MIN_SKEW_ANGLE=0.2
+
+      # Variables OCR
+      - OCR_VERSION=PP-OCRv3
+      - OCR_LANG=es
+      - OCR_USE_DOC_ORIENTATION=false
+      - OCR_USE_DOC_UNWARPING=false
+      - OCR_USE_TEXTLINE_ORIENTATION=false
+      - OCR_TEXT_DET_THRESH=0.1
+      - OCR_TEXT_DET_BOX_THRESH=0.4
+      - OCR_TEXT_DET_UNCLIP_RATIO=1.5
+      - OCR_TEXT_DET_LIMIT_SIDE_LEN=960
+      - OCR_TEXT_DET_LIMIT_TYPE=min
+      - OCR_TEXT_RECOGNITION_BATCH_SIZE=6
+
+      # Optimizacion CPU
+      - OMP_NUM_THREADS=1
+      - MKL_NUM_THREADS=1
+      - FLAGS_allocator_strategy=auto_growth
+      - FLAGS_fraction_of_gpu_memory_to_use=0
+      - CUDA_VISIBLE_DEVICES=""
+
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8503/health"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  paddlex-models:
+    driver: local
+  paddleocr-models:
+    driver: local
