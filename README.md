@@ -88,19 +88,46 @@ FUSION: Proyecto de Paco con API REST
 - Integración n8n
 - Endpoint `/ocr` original
 
-## 🚀 Instalación Rápida
+## 🚀 Instalación
 
 ### Prerequisitos
-- Docker y Docker Compose instalados
-- 4GB RAM mínimo (6GB recomendado)
-- CPU con 4+ cores
 
-### Instalación
+- Docker y Docker Compose instalados
+- 4GB RAM mínimo (8GB recomendado)
+- **CPU con soporte AVX/AVX2** (ver sección de requisitos de CPU)
+
+### Requisitos de CPU (IMPORTANTE)
+
+PaddlePaddle requiere instrucciones AVX/AVX2 para funcionar. Si tu CPU no las soporta, obtendrás el error:
+
+```
+Illegal instruction (core dumped)
+```
+
+**Para verificar si tu CPU es compatible:**
+
+```bash
+# En Linux/Docker
+cat /proc/cpuinfo | grep "model name" | head -1
+cat /proc/cpuinfo | grep -o 'avx[^ ]*' | head -1
+```
+
+**CPUs NO compatibles:**
+- `Common KVM processor` (VPS virtualizados básicos)
+- CPUs muy antiguas sin AVX
+
+**CPUs compatibles:**
+- Intel Core i3/i5/i7/i9 (2011+)
+- AMD Ryzen
+- Intel Xeon (modernos)
+- VPS con "dedicated CPU" o CPU passthrough
+
+### Instalación Local (Docker Compose)
 
 ```bash
 # Clonar repositorio
-git clone <repo>
-cd paddleocr_webcomunicav3_fusion
+git clone https://github.com/webcomunicasolutions/paddleocr_WEBCOMUNICAV3_fusion.git
+cd paddleocr_WEBCOMUNICAV3_fusion
 
 # Construir e iniciar
 docker-compose build
@@ -109,6 +136,135 @@ docker-compose up -d
 # Verificar estado
 curl http://localhost:8503/health
 ```
+
+### Instalación en EasyPanel
+
+#### Paso 1: Crear servicio desde GitHub
+
+1. En EasyPanel, crear nuevo servicio "App"
+2. Seleccionar "GitHub" como fuente
+3. Repositorio: `webcomunicasolutions/paddleocr_WEBCOMUNICAV3_fusion`
+4. Branch: `main`
+5. Puerto: `8503`
+
+#### Paso 2: Configurar variables de entorno
+
+```env
+# Flask
+FLASK_ENV=production
+FLASK_PORT=8503
+TZ=Europe/Madrid
+
+# OpenCV
+OPENCV_HSV_LOWER_H=0
+OPENCV_HSV_LOWER_S=0
+OPENCV_HSV_LOWER_V=140
+OPENCV_HSV_UPPER_H=180
+OPENCV_HSV_UPPER_S=60
+OPENCV_HSV_UPPER_V=255
+OPENCV_MIN_AREA_PERCENT=0.05
+OPENCV_EPSILON_FACTOR=0.01
+OPENCV_ERODE_ITERATIONS=1
+OPENCV_DILATE_ITERATIONS=2
+OPENCV_MIN_WIDTH=300
+OPENCV_MIN_HEIGHT=400
+OPENCV_EROSION_PERCENT=0.085
+OPENCV_INNER_SCALE_FACTOR=1.06
+
+# Rotacion
+ROTATION_MIN_CONFIDENCE=0.7
+ROTATION_MIN_SKEW_ANGLE=0.2
+
+# OCR
+OCR_VERSION=PP-OCRv3
+OCR_LANG=es
+OCR_USE_DOC_ORIENTATION=false
+OCR_USE_DOC_UNWARPING=false
+OCR_USE_TEXTLINE_ORIENTATION=false
+OCR_TEXT_DET_THRESH=0.1
+OCR_TEXT_DET_BOX_THRESH=0.4
+OCR_TEXT_DET_UNCLIP_RATIO=1.5
+OCR_TEXT_DET_LIMIT_SIDE_LEN=960
+OCR_TEXT_DET_LIMIT_TYPE=min
+OCR_TEXT_RECOGNITION_BATCH_SIZE=6
+
+# Optimizacion CPU
+OMP_NUM_THREADS=1
+MKL_NUM_THREADS=1
+FLAGS_allocator_strategy=auto_growth
+FLAGS_fraction_of_gpu_memory_to_use=0
+CUDA_VISIBLE_DEVICES=""
+```
+
+#### Paso 3: Configurar volúmenes (Storage)
+
+Crear 3 volúmenes persistentes:
+
+| Nombre | Mount Path |
+|--------|------------|
+| `paddleocr-models` | `/home/n8n/.paddleocr` |
+| `paddlex-models` | `/home/n8n/.paddlex` |
+| `n8n-data` | `/home/n8n` |
+
+#### Paso 4: Configurar dominio
+
+1. Ir a "Domains" en EasyPanel
+2. Añadir dominio (ej: `paddleocr.tu-dominio.easypanel.host`)
+3. Puerto: `8503`
+
+#### Paso 5: Build y Deploy
+
+1. Hacer clic en "Deploy"
+2. Esperar a que termine el build (~5-10 minutos)
+3. Verificar que el contenedor está corriendo
+
+### Verificar instalación
+
+```bash
+# Health check
+curl https://tu-dominio/health
+
+# Dashboard web
+# Abrir en navegador: https://tu-dominio/
+
+# Probar OCR (desde el dashboard o curl)
+curl -X POST https://tu-dominio/process -F "file=@documento.pdf"
+```
+
+### Solución de problemas
+
+#### Error: Contenedor se reinicia en bucle
+
+**Causa:** El healthcheck de EasyPanel mata el contenedor antes de que cargue.
+
+**Solución:** El código ya implementa carga on-demand. Los modelos se cargan con la primera petición OCR, no al inicio.
+
+#### Error: `Illegal instruction (core dumped)`
+
+**Causa:** La CPU del servidor no soporta instrucciones AVX/AVX2.
+
+**Diagnóstico:**
+```bash
+# Dentro del contenedor
+python3 -c "import paddle"
+# Si da "Illegal instruction" -> CPU no compatible
+```
+
+**Solución:** Usar un servidor con CPU dedicada que soporte AVX2:
+- Hetzner (dedicated CPU)
+- DigitalOcean (dedicated CPU droplets)
+- AWS (instancias compute-optimized)
+- VPS con CPU passthrough
+
+#### Error: `float() argument must be a string or a real number, not 'NoneType'`
+
+**Causa:** Falta variable de entorno.
+
+**Solución:** Verificar que todas las variables de entorno están configuradas (ver Paso 2).
+
+#### Primera petición OCR muy lenta (~2 minutos)
+
+**Esto es normal.** La primera petición carga PaddlePaddle y los modelos. Las siguientes peticiones serán rápidas (~1-2 segundos).
 
 ## 📖 Endpoints API
 
