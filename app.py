@@ -1868,9 +1868,13 @@ server_stats = {
     'total_processing_time': 0.0
 }
 
+# Historial de OCR para testing (últimos 50 resultados)
+ocr_history = []
+MAX_HISTORY = 50
+
 @app.route('/')
 def dashboard():
-    """Dashboard web interactivo"""
+    """Dashboard web interactivo con pestañas"""
     uptime = int(time.time() - server_stats['startup_time'])
     success_rate = (server_stats['successful_requests'] / server_stats['total_requests'] * 100) if server_stats['total_requests'] > 0 else 0
     avg_time = (server_stats['total_processing_time'] / server_stats['successful_requests']) if server_stats['successful_requests'] > 0 else 0
@@ -1882,14 +1886,15 @@ def dashboard():
     <title>PaddleOCR Fusion v3 - Dashboard</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta http-equiv="refresh" content="30">
     <style>
+        * {{ box-sizing: border-box; }}
         body {{
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             max-width: 1200px;
             margin: 0 auto;
             padding: 20px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
             color: #333;
         }}
         .container {{
@@ -1898,335 +1903,353 @@ def dashboard():
             padding: 30px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.2);
         }}
-        h1 {{
-            color: #667eea;
-            border-bottom: 3px solid #667eea;
-            padding-bottom: 10px;
-            margin-top: 0;
-        }}
-        h2 {{
-            color: #764ba2;
-            margin-top: 30px;
-            border-left: 4px solid #764ba2;
-            padding-left: 15px;
-        }}
-        .status-box {{
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 20px;
-            border-radius: 10px;
-            margin: 20px 0;
-        }}
-        .stats-grid {{
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin: 20px 0;
-        }}
-        .stat-card {{
-            background: #f8f9fa;
-            padding: 15px;
-            border-radius: 8px;
-            border-left: 4px solid #667eea;
-        }}
-        .stat-value {{
-            font-size: 2em;
-            font-weight: bold;
-            color: #667eea;
-        }}
-        .stat-label {{
-            color: #666;
-            font-size: 0.9em;
-        }}
-        .endpoint-list {{
-            background: #f8f9fa;
-            padding: 15px;
-            border-radius: 8px;
-            margin: 10px 0;
-        }}
-        .endpoint {{
-            padding: 10px;
-            margin: 5px 0;
-            background: white;
-            border-left: 4px solid #764ba2;
-            border-radius: 4px;
-        }}
-        .badge {{
-            display: inline-block;
-            padding: 3px 8px;
-            border-radius: 3px;
-            font-size: 0.8em;
-            font-weight: bold;
-            margin-right: 10px;
-        }}
+        h1 {{ color: #667eea; border-bottom: 3px solid #667eea; padding-bottom: 10px; margin-top: 0; }}
+        h2 {{ color: #764ba2; margin-top: 20px; border-left: 4px solid #764ba2; padding-left: 15px; }}
+
+        /* Tabs */
+        .tabs {{ display: flex; border-bottom: 2px solid #667eea; margin-bottom: 20px; flex-wrap: wrap; }}
+        .tab {{ padding: 12px 24px; cursor: pointer; border: none; background: #f0f0f0; margin-right: 5px; border-radius: 8px 8px 0 0; font-size: 1em; transition: all 0.3s; }}
+        .tab:hover {{ background: #e0e0e0; }}
+        .tab.active {{ background: #667eea; color: white; }}
+        .tab-content {{ display: none; animation: fadeIn 0.3s; }}
+        .tab-content.active {{ display: block; }}
+        @keyframes fadeIn {{ from {{ opacity: 0; }} to {{ opacity: 1; }} }}
+
+        .status-box {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 10px; margin: 20px 0; }}
+        .stats-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin: 20px 0; }}
+        .stat-card {{ background: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid #667eea; text-align: center; }}
+        .stat-value {{ font-size: 1.8em; font-weight: bold; color: #667eea; }}
+        .stat-label {{ color: #666; font-size: 0.85em; }}
+        .endpoint-list {{ background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 10px 0; }}
+        .endpoint {{ padding: 10px; margin: 5px 0; background: white; border-left: 4px solid #764ba2; border-radius: 4px; }}
+        .badge {{ display: inline-block; padding: 3px 8px; border-radius: 3px; font-size: 0.8em; font-weight: bold; margin-right: 10px; }}
         .badge-get {{ background: #28a745; color: white; }}
         .badge-post {{ background: #007bff; color: white; }}
         .badge-new {{ background: #ffc107; color: #333; }}
         .badge-original {{ background: #6c757d; color: white; }}
-        .upload-form {{
-            background: #f8f9fa;
-            padding: 25px;
-            border-radius: 10px;
-            margin: 20px 0;
-            border: 2px dashed #667eea;
-        }}
-        .upload-form input[type="file"] {{
-            display: block;
-            margin: 15px 0;
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            width: 100%;
-            box-sizing: border-box;
-        }}
-        .upload-form button {{
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            padding: 12px 30px;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 1em;
-            font-weight: bold;
-        }}
-        .upload-form button:hover {{
-            opacity: 0.9;
-        }}
-        .upload-form button:disabled {{
-            background: #ccc;
-            cursor: not-allowed;
-        }}
-        #result-box {{
-            background: #1a1a2e;
-            color: #0f0;
-            padding: 20px;
-            border-radius: 10px;
-            margin-top: 20px;
-            display: none;
-            font-family: 'Courier New', monospace;
-            white-space: pre-wrap;
-            max-height: 500px;
-            overflow-y: auto;
-        }}
-        #loading {{
-            display: none;
-            text-align: center;
-            padding: 20px;
-        }}
-        .spinner {{
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #667eea;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 10px;
-        }}
-        @keyframes spin {{
-            0% {{ transform: rotate(0deg); }}
-            100% {{ transform: rotate(360deg); }}
-        }}
-        code {{
-            background: #f4f4f4;
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-family: 'Courier New', monospace;
-        }}
-        .feature-badge {{
-            display: inline-block;
-            padding: 5px 10px;
-            margin: 5px;
-            border-radius: 5px;
-            font-size: 0.9em;
-        }}
+        code {{ background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: 'Courier New', monospace; }}
+        .feature-badge {{ display: inline-block; padding: 5px 10px; margin: 3px; border-radius: 5px; font-size: 0.85em; }}
         .badge-success {{ background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }}
+
+        /* OCR Form */
+        .ocr-form {{ background: #f8f9fa; padding: 25px; border-radius: 10px; margin: 20px 0; }}
+        .form-group {{ margin-bottom: 20px; }}
+        .form-group label {{ display: block; margin-bottom: 8px; font-weight: bold; color: #333; }}
+        .form-group input[type="file"] {{ width: 100%; padding: 15px; border: 2px dashed #667eea; border-radius: 8px; background: white; cursor: pointer; }}
+        .format-selector {{ background: white; padding: 15px; border-radius: 8px; margin: 15px 0; }}
+        .format-selector label {{ display: inline-block; margin-right: 20px; cursor: pointer; padding: 8px 15px; border-radius: 5px; transition: all 0.2s; }}
+        .format-selector input[type="radio"] {{ margin-right: 8px; }}
+        .format-selector label:hover {{ background: #e9ecef; }}
+        .btn {{ padding: 12px 30px; border: none; border-radius: 8px; cursor: pointer; font-size: 1em; font-weight: bold; transition: all 0.3s; }}
+        .btn-primary {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }}
+        .btn-primary:hover {{ transform: translateY(-2px); box-shadow: 0 5px 15px rgba(102,126,234,0.4); }}
+        .btn-primary:disabled {{ opacity: 0.6; cursor: not-allowed; transform: none; }}
+        .btn-danger {{ background: #dc3545; color: white; }}
+        .btn-danger:hover {{ background: #c82333; }}
+
+        /* Results */
+        .result-box {{ margin-top: 20px; padding: 20px; border-radius: 10px; display: none; }}
+        .result-box.success {{ background: #d4edda; border: 1px solid #c3e6cb; }}
+        .result-box.error {{ background: #f8d7da; border: 1px solid #f5c6cb; }}
+        .result-text {{ background: white; padding: 15px; border-radius: 8px; margin-top: 15px; max-height: 400px; overflow-y: auto; white-space: pre-wrap; font-family: 'Courier New', monospace; font-size: 0.9em; line-height: 1.5; }}
+        .result-stats {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 10px; margin-top: 15px; }}
+        .result-stat {{ background: white; padding: 10px; border-radius: 5px; text-align: center; }}
+
+        /* History */
+        .history-list {{ max-height: 600px; overflow-y: auto; }}
+        .history-item {{ background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid #667eea; }}
+        .history-item.failed {{ border-left-color: #dc3545; }}
+        .history-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }}
+        .history-filename {{ font-weight: bold; color: #333; }}
+        .history-time {{ color: #666; font-size: 0.85em; }}
+        .history-meta {{ display: flex; gap: 15px; font-size: 0.9em; color: #666; flex-wrap: wrap; }}
+        .history-text {{ background: white; padding: 10px; border-radius: 5px; margin-top: 10px; max-height: 150px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 0.85em; white-space: pre-wrap; }}
+        .history-controls {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }}
+        .empty-history {{ text-align: center; padding: 40px; color: #666; }}
+
+        /* Loading */
+        .loading {{ display: none; text-align: center; padding: 30px; }}
+        .spinner {{ border: 4px solid #f3f3f3; border-top: 4px solid #667eea; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 15px; }}
+        @keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}
+
+        pre {{ background: #f4f4f4; padding: 15px; border-radius: 5px; overflow-x: auto; }}
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🚀 PaddleOCR Fusion v3 - Dashboard</h1>
-        <p><strong>Enfoque:</strong> API REST sobre proyecto de Paco (PaddleOCR 3.x + Preprocesamiento completo)</p>
+        <h1>PaddleOCR Fusion v3</h1>
 
-        <div class="status-box">
-            <h3 style="margin-top:0;">📊 Estado del Servidor</h3>
-            <p><strong>Estado:</strong> {'✅ Operativo' if (doc_preprocessor and ocr_initialized) else '⏳ Inicializando'}</p>
-            <p><strong>Preprocesador:</strong> {'✅ Listo' if doc_preprocessor else '❌ No disponible'}</p>
-            <p><strong>OCR:</strong> {'✅ Listo' if ocr_initialized else '❌ No disponible'}</p>
-            <p><strong>Uptime:</strong> {uptime//3600}h {(uptime%3600)//60}m {uptime%60}s</p>
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab active" onclick="showTab('dashboard')">Dashboard</button>
+            <button class="tab" onclick="showTab('test')">Probar OCR</button>
+            <button class="tab" onclick="showTab('history')">Historial</button>
+            <button class="tab" onclick="showTab('docs')">Documentacion</button>
         </div>
 
-        <h2>📈 Estadísticas</h2>
-        <div class="stats-grid">
-            <div class="stat-card">
-                <div class="stat-value">{server_stats['total_requests']}</div>
-                <div class="stat-label">Total Requests</div>
+        <!-- Tab: Dashboard -->
+        <div id="dashboard" class="tab-content active">
+            <div class="status-box">
+                <h3 style="margin-top:0;">Estado del Servidor</h3>
+                <p><strong>Estado:</strong> {'Operativo' if (doc_preprocessor and ocr_initialized) else 'Inicializando...'}</p>
+                <p><strong>Preprocesador:</strong> {'Listo' if doc_preprocessor else 'Cargando...'}</p>
+                <p><strong>OCR:</strong> {'Listo' if ocr_initialized else 'Cargando...'}</p>
+                <p><strong>Uptime:</strong> {uptime//3600}h {(uptime%3600)//60}m {uptime%60}s</p>
             </div>
-            <div class="stat-card">
-                <div class="stat-value">{server_stats['successful_requests']}</div>
-                <div class="stat-label">Successful</div>
+
+            <h2>Estadisticas</h2>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value">{server_stats['total_requests']}</div>
+                    <div class="stat-label">Total Requests</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">{server_stats['successful_requests']}</div>
+                    <div class="stat-label">Exitosos</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">{success_rate:.1f}%</div>
+                    <div class="stat-label">Tasa Exito</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">{avg_time:.2f}s</div>
+                    <div class="stat-label">Tiempo Prom.</div>
+                </div>
             </div>
-            <div class="stat-card">
-                <div class="stat-value">{success_rate:.1f}%</div>
-                <div class="stat-label">Success Rate</div>
+
+            <h2>Caracteristicas</h2>
+            <div>
+                <span class="feature-badge badge-success">PaddleOCR 3.x</span>
+                <span class="feature-badge badge-success">Preprocesamiento OpenCV</span>
+                <span class="feature-badge badge-success">Correccion Perspectiva</span>
+                <span class="feature-badge badge-success">Correccion Orientacion</span>
+                <span class="feature-badge badge-success">Correccion Inclinacion</span>
+                <span class="feature-badge badge-success">Multi-pagina</span>
+                <span class="feature-badge badge-success">Integracion n8n</span>
+                <span class="feature-badge badge-success">API REST</span>
             </div>
-            <div class="stat-card">
-                <div class="stat-value">{avg_time:.2f}s</div>
-                <div class="stat-label">Avg Time</div>
+
+            <h2>Endpoints API</h2>
+            <div class="endpoint-list">
+                <div class="endpoint"><span class="badge badge-get">GET</span><code>/</code> - Dashboard web</div>
+                <div class="endpoint"><span class="badge badge-get">GET</span><code>/health</code> - Health check</div>
+                <div class="endpoint"><span class="badge badge-get">GET</span><code>/stats</code> - Estadisticas JSON</div>
+                <div class="endpoint"><span class="badge badge-post">POST</span><span class="badge badge-new">NUEVO</span><code>/process</code> - OCR via API REST</div>
+                <div class="endpoint"><span class="badge badge-post">POST</span><code>/analyze</code> - Analisis detallado</div>
+                <div class="endpoint"><span class="badge badge-post">POST</span><span class="badge badge-original">n8n</span><code>/ocr</code> - Endpoint original</div>
             </div>
         </div>
 
-        <h2>📤 Probar OCR</h2>
-        <div class="upload-form">
-            <form id="ocr-form" enctype="multipart/form-data">
-                <label><strong>Selecciona un archivo PDF o imagen:</strong></label>
-                <input type="file" id="file-input" name="file" accept=".pdf,.png,.jpg,.jpeg,.tiff,.bmp" required>
-                <button type="submit" id="submit-btn">🚀 Procesar OCR</button>
-            </form>
-            <div id="loading">
+        <!-- Tab: Test OCR -->
+        <div id="test" class="tab-content">
+            <h2>Probar OCR</h2>
+            <p>Sube un archivo PDF o imagen para extraer el texto.</p>
+
+            <div class="ocr-form">
+                <form id="ocrForm" enctype="multipart/form-data">
+                    <div class="form-group">
+                        <label>Archivo (PDF, PNG, JPG, JPEG, BMP, TIFF):</label>
+                        <input type="file" id="fileInput" name="file" accept=".pdf,.png,.jpg,.jpeg,.bmp,.tiff,.tif" required>
+                    </div>
+
+                    <div class="format-selector">
+                        <strong>Formato de salida:</strong><br><br>
+                        <label><input type="radio" name="format" value="normal" checked> Normal (texto plano)</label>
+                        <label><input type="radio" name="format" value="layout"> Layout (mantiene estructura)</label>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary" id="submitBtn">Procesar OCR</button>
+                </form>
+            </div>
+
+            <div class="loading" id="loading">
                 <div class="spinner"></div>
-                <p><strong>Procesando...</strong></p>
-                <p style="color:#666;">La primera vez puede tardar ~2 minutos mientras se cargan los modelos.</p>
+                <p>Procesando documento...</p>
+                <p style="font-size:0.9em;color:#666;">Esto puede tomar unos segundos</p>
             </div>
-            <div id="result-box"></div>
+
+            <div class="result-box" id="resultBox">
+                <h3 id="resultTitle"></h3>
+                <div class="result-stats" id="resultStats"></div>
+                <div class="result-text" id="resultText"></div>
+            </div>
         </div>
 
-        <script>
-        document.getElementById('ocr-form').addEventListener('submit', async function(e) {{
+        <!-- Tab: History -->
+        <div id="history" class="tab-content">
+            <h2>Historial de OCR</h2>
+            <div class="history-controls">
+                <span id="historyCount">Cargando...</span>
+                <button class="btn btn-danger" onclick="clearHistory()">Limpiar Historial</button>
+            </div>
+            <div class="history-list" id="historyList">
+                <div class="empty-history"><p>Cargando historial...</p></div>
+            </div>
+        </div>
+
+        <!-- Tab: Docs -->
+        <div id="docs" class="tab-content">
+            <h2>Documentacion</h2>
+
+            <h3>API REST (nuevos endpoints):</h3>
+            <pre>
+# OCR estandar
+curl -X POST http://localhost:8503/process \\
+  -F "file=@documento.pdf" \\
+  -F "format=normal"
+
+# Con formato layout
+curl -X POST http://localhost:8503/process \\
+  -F "file=@documento.pdf" \\
+  -F "format=layout"
+
+# Analisis detallado
+curl -X POST http://localhost:8503/analyze \\
+  -F "file=@documento.pdf"
+
+# Estadisticas
+curl http://localhost:8503/stats
+
+# Historial
+curl http://localhost:8503/api/history
+            </pre>
+
+            <h3>Integracion n8n (endpoint original):</h3>
+            <pre>
+# Usar endpoint /ocr (compatibilidad total)
+curl -X POST http://localhost:8503/ocr \\
+  -F "filename=/home/n8n/in/documento.pdf"
+            </pre>
+
+            <h3>Enlaces utiles:</h3>
+            <ul>
+                <li><a href="https://github.com/PaddlePaddle/PaddleOCR" target="_blank">PaddleOCR Official Docs</a></li>
+                <li><strong>README.md</strong> - Documentacion completa</li>
+                <li><strong>CLAUDE.md</strong> - Guia de desarrollo</li>
+            </ul>
+
+            <h3>Requisitos de CPU:</h3>
+            <p style="background:#fff3cd;padding:15px;border-radius:8px;border-left:4px solid #ffc107;">
+                <strong>IMPORTANTE:</strong> Este proyecto requiere CPU con soporte AVX/AVX2.<br>
+                Procesadores Intel 4ta generacion o posterior, o AMD Zen o posterior.<br>
+                NO funciona en VPS con CPU virtualizada basica (Common KVM processor).
+            </p>
+        </div>
+
+        <p style="text-align:center; color:#999; margin-top:30px;"><strong>PaddleOCR Fusion v3.0.0</strong></p>
+    </div>
+
+    <script>
+        function showTab(tabId) {{
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+            event.target.classList.add('active');
+            if (tabId === 'history') loadHistory();
+        }}
+
+        document.getElementById('ocrForm').addEventListener('submit', async function(e) {{
             e.preventDefault();
-
-            const fileInput = document.getElementById('file-input');
-            const submitBtn = document.getElementById('submit-btn');
+            const fileInput = document.getElementById('fileInput');
+            const format = document.querySelector('input[name="format"]:checked').value;
+            const submitBtn = document.getElementById('submitBtn');
             const loading = document.getElementById('loading');
-            const resultBox = document.getElementById('result-box');
+            const resultBox = document.getElementById('resultBox');
 
-            if (!fileInput.files[0]) {{
-                alert('Por favor selecciona un archivo');
-                return;
-            }}
+            if (!fileInput.files[0]) {{ alert('Selecciona un archivo'); return; }}
 
-            // Mostrar loading
             submitBtn.disabled = true;
             loading.style.display = 'block';
             resultBox.style.display = 'none';
 
             const formData = new FormData();
             formData.append('file', fileInput.files[0]);
+            formData.append('format', format);
+            formData.append('detailed', 'true');
 
             try {{
-                const response = await fetch('/process', {{
-                    method: 'POST',
-                    body: formData
-                }});
+                const response = await fetch('/process', {{ method: 'POST', body: formData }});
+                const data = await response.json();
 
-                const result = await response.json();
-
-                // Mostrar resultado
-                resultBox.style.display = 'block';
-                if (result.success) {{
-                    resultBox.style.color = '#0f0';
-                    resultBox.innerHTML = '<strong>✅ OCR Completado</strong>\\n\\n' +
-                        '<strong>Texto extraído:</strong>\\n' + (result.text || result.full_text || 'Sin texto') +
-                        '\\n\\n<strong>Tiempo:</strong> ' + (result.processing_time || 'N/A') + 's' +
-                        '\\n<strong>Páginas:</strong> ' + (result.pages_processed || 'N/A');
-                }} else {{
-                    resultBox.style.color = '#f00';
-                    resultBox.innerHTML = '<strong>❌ Error:</strong>\\n' + (result.error || 'Error desconocido');
-                }}
-            }} catch (error) {{
-                resultBox.style.display = 'block';
-                resultBox.style.color = '#f00';
-                resultBox.innerHTML = '<strong>❌ Error de conexión:</strong>\\n' + error.message;
-            }} finally {{
-                submitBtn.disabled = false;
                 loading.style.display = 'none';
+                submitBtn.disabled = false;
+                resultBox.style.display = 'block';
+
+                if (data.success) {{
+                    resultBox.className = 'result-box success';
+                    document.getElementById('resultTitle').textContent = 'OCR Completado';
+                    const stats = data.stats || {{}};
+                    document.getElementById('resultStats').innerHTML = `
+                        <div class="result-stat"><strong>${{data.processing_time}}s</strong><br>Tiempo</div>
+                        <div class="result-stat"><strong>${{stats.total_pages || 1}}</strong><br>Paginas</div>
+                        <div class="result-stat"><strong>${{stats.total_blocks || 0}}</strong><br>Bloques</div>
+                        <div class="result-stat"><strong>${{((stats.avg_confidence || 0) * 100).toFixed(1)}}%</strong><br>Confianza</div>
+                        <div class="result-stat"><strong>${{(data.text || '').length}}</strong><br>Caracteres</div>
+                        <div class="result-stat"><strong>${{format}}</strong><br>Formato</div>
+                    `;
+                    document.getElementById('resultText').textContent = data.text || 'Sin texto extraido';
+                }} else {{
+                    resultBox.className = 'result-box error';
+                    document.getElementById('resultTitle').textContent = 'Error';
+                    document.getElementById('resultStats').innerHTML = '';
+                    document.getElementById('resultText').textContent = data.error || 'Error desconocido';
+                }}
+                loadHistory();
+            }} catch (error) {{
+                loading.style.display = 'none';
+                submitBtn.disabled = false;
+                resultBox.style.display = 'block';
+                resultBox.className = 'result-box error';
+                document.getElementById('resultTitle').textContent = 'Error de conexion';
+                document.getElementById('resultStats').innerHTML = '';
+                document.getElementById('resultText').textContent = error.message;
             }}
         }});
-        </script>
 
-        <h2>🎯 Características del Proyecto</h2>
-        <div>
-            <span class="feature-badge badge-success">✅ PaddleOCR 3.x (Base de Paco)</span>
-            <span class="feature-badge badge-success">✅ Preprocesamiento OpenCV</span>
-            <span class="feature-badge badge-success">✅ Corrección de Perspectiva</span>
-            <span class="feature-badge badge-success">✅ Corrección de Orientación</span>
-            <span class="feature-badge badge-success">✅ Corrección de Inclinación</span>
-            <span class="feature-badge badge-success">✅ Multi-página Inteligente</span>
-            <span class="feature-badge badge-success">✅ Integración n8n</span>
-            <span class="feature-badge badge-success">✅ API REST (Nueva)</span>
-            <span class="feature-badge badge-success">✅ Dashboard Web (Nuevo)</span>
-        </div>
+        async function loadHistory() {{
+            try {{
+                const response = await fetch('/api/history');
+                const data = await response.json();
+                const historyList = document.getElementById('historyList');
+                const historyCount = document.getElementById('historyCount');
 
-        <h2>🔌 Endpoints API</h2>
-        <div class="endpoint-list">
-            <div class="endpoint">
-                <span class="badge badge-get">GET</span>
-                <span class="badge badge-new">NUEVO</span>
-                <code>/</code> - Dashboard web interactivo
-            </div>
-            <div class="endpoint">
-                <span class="badge badge-get">GET</span>
-                <span class="badge badge-new">NUEVO</span>
-                <code>/health</code> - Health check completo
-            </div>
-            <div class="endpoint">
-                <span class="badge badge-get">GET</span>
-                <span class="badge badge-new">NUEVO</span>
-                <code>/stats</code> - Estadísticas detalladas del servidor
-            </div>
-            <div class="endpoint">
-                <span class="badge badge-post">POST</span>
-                <span class="badge badge-new">NUEVO</span>
-                <code>/process</code> - OCR estándar (wrapper REST sobre /ocr)
-            </div>
-            <div class="endpoint">
-                <span class="badge badge-post">POST</span>
-                <span class="badge badge-new">NUEVO</span>
-                <code>/analyze</code> - Análisis ultra-detallado con visualización
-            </div>
-            <div class="endpoint">
-                <span class="badge badge-post">POST</span>
-                <span class="badge badge-original">ORIGINAL</span>
-                <code>/ocr</code> - Endpoint original de Paco (integración n8n)
-            </div>
-        </div>
+                historyCount.textContent = `${{data.total}} de ${{data.max_history}} registros`;
 
-        <h2>📖 Ejemplos de Uso</h2>
+                if (data.history.length === 0) {{
+                    historyList.innerHTML = '<div class="empty-history"><p>No hay registros en el historial</p><p style="color:#999;">Los resultados de OCR apareceran aqui</p></div>';
+                    return;
+                }}
 
-        <h3>API REST estándar (nuevos endpoints):</h3>
-        <pre style="background:#f4f4f4; padding:15px; border-radius:5px; overflow-x:auto;">
-# OCR estándar
-curl -X POST http://localhost:8503/process \\
-  -F "file=@documento.pdf" \\
-  -F "language=es" \\
-  -F "detailed=true"
+                historyList.innerHTML = data.history.map(item => `
+                    <div class="history-item ${{item.success ? '' : 'failed'}}">
+                        <div class="history-header">
+                            <span class="history-filename">${{item.filename}}</span>
+                            <span class="history-time">${{item.timestamp}}</span>
+                        </div>
+                        <div class="history-meta">
+                            <span>Tiempo: ${{item.processing_time}}s</span>
+                            <span>Paginas: ${{item.pages || 1}}</span>
+                            <span>Caracteres: ${{item.chars || 0}}</span>
+                            <span>Formato: ${{item.format || 'normal'}}</span>
+                        </div>
+                        ${{item.text ? `<div class="history-text">${{item.text}}</div>` : ''}}
+                    </div>
+                `).join('');
+            }} catch (error) {{
+                document.getElementById('historyList').innerHTML = '<div class="empty-history"><p>Error cargando historial</p></div>';
+            }}
+        }}
 
-# Análisis detallado
-curl -X POST http://localhost:8503/analyze \\
-  -F "file=@documento.pdf" | jq -r '.ultra_analysis'
-
-# Estadísticas
-curl http://localhost:8503/stats | jq
-        </pre>
-
-        <h3>Integración n8n (endpoint original):</h3>
-        <pre style="background:#f4f4f4; padding:15px; border-radius:5px; overflow-x:auto;">
-# Usar endpoint /ocr (mantiene compatibilidad total)
-curl -X POST http://localhost:8503/ocr \\
-  -F "filename=/home/n8n/in/documento.pdf"
-        </pre>
-
-        <h2>📚 Documentación</h2>
-        <ul>
-            <li><a href="https://github.com/PaddlePaddle/PaddleOCR">PaddleOCR Official Docs</a></li>
-            <li><strong>README.md</strong> - Documentación completa del proyecto</li>
-            <li><strong>CLAUDE.md</strong> - Guía para desarrollo</li>
-        </ul>
-
-        <p style="text-align:center; color:#999; margin-top:30px;">
-            <em>Dashboard actualizado automáticamente cada 30 segundos</em><br>
-            <strong>PaddleOCR Fusion v3.0.0</strong> - API REST sobre proyecto de Paco
-        </p>
-    </div>
+        async function clearHistory() {{
+            if (!confirm('Seguro que quieres limpiar el historial?')) return;
+            try {{
+                await fetch('/api/history/clear', {{ method: 'POST' }});
+                loadHistory();
+            }} catch (error) {{
+                alert('Error limpiando historial');
+            }}
+        }}
+    </script>
 </body>
 </html>
     """
@@ -2270,7 +2293,7 @@ def process():
     Endpoint REST estándar - Wrapper sobre el endpoint /ocr de Paco
     Acepta archivos multipart en lugar de rutas en disco
     """
-    global server_stats
+    global server_stats, ocr_history
     start_time = time.time()
     server_stats['total_requests'] += 1
 
@@ -2296,6 +2319,8 @@ def process():
         # Obtener parámetros
         language = request.form.get('language', 'es')
         detailed = request.form.get('detailed', 'false').lower() == 'true'
+        output_format = request.form.get('format', 'normal')  # normal o layout
+        original_filename = file.filename  # Guardar nombre original para historial
 
         # Guardar archivo temporal en /home/n8n/in para compatibilidad con /ocr
         n8nHomeDir = '/home/n8n'
@@ -2350,24 +2375,59 @@ def process():
         if response_json.get('success'):
             server_stats['successful_requests'] += 1
 
+            extracted_text = response_json.get('extracted_text', '')
+            stats = response_json.get('stats', {})
+
             result = {
                 'success': True,
-                'text': response_json.get('extracted_text', ''),
-                'stats': response_json.get('stats', {}),
+                'text': extracted_text,
+                'stats': stats,
                 'processing_time': round(processing_time, 3),
+                'format': output_format,
                 'timestamp': time.time()
             }
 
             if detailed:
                 result['detailed_stats'] = {
-                    'total_pages': response_json['stats'].get('total_pages', 1),
-                    'total_blocks': response_json['stats'].get('total_blocks', 0),
-                    'avg_confidence': response_json['stats'].get('avg_confidence', 0.0)
+                    'total_pages': stats.get('total_pages', 1),
+                    'total_blocks': stats.get('total_blocks', 0),
+                    'avg_confidence': stats.get('avg_confidence', 0.0)
                 }
+
+            # Guardar en historial
+            history_entry = {
+                'filename': original_filename,
+                'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
+                'processing_time': round(processing_time, 3),
+                'success': True,
+                'text': extracted_text[:2000] + ('...' if len(extracted_text) > 2000 else ''),
+                'chars': len(extracted_text),
+                'pages': stats.get('total_pages', 1),
+                'format': output_format
+            }
+            ocr_history.insert(0, history_entry)
+            if len(ocr_history) > MAX_HISTORY:
+                ocr_history.pop()
 
             return jsonify(result)
         else:
             server_stats['failed_requests'] += 1
+
+            # Guardar error en historial
+            history_entry = {
+                'filename': original_filename,
+                'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
+                'processing_time': round(processing_time, 3),
+                'success': False,
+                'text': response_json.get('error', 'Unknown error'),
+                'chars': 0,
+                'pages': 0,
+                'format': output_format
+            }
+            ocr_history.insert(0, history_entry)
+            if len(ocr_history) > MAX_HISTORY:
+                ocr_history.pop()
+
             return jsonify({
                 'success': False,
                 'error': response_json.get('error', 'Unknown error'),
@@ -2519,6 +2579,27 @@ def analyze():
             'error': str(e),
             'processing_time': round(processing_time, 3)
         }), 500
+
+
+@app.route('/api/history')
+def api_history():
+    """Endpoint para obtener el historial de OCR"""
+    return jsonify({
+        'history': ocr_history,
+        'total': len(ocr_history),
+        'max_history': MAX_HISTORY
+    })
+
+
+@app.route('/api/history/clear', methods=['POST'])
+def api_history_clear():
+    """Endpoint para limpiar el historial de OCR"""
+    global ocr_history
+    ocr_history = []
+    return jsonify({
+        'success': True,
+        'message': 'Historial limpiado'
+    })
 
 
 # ============================================================================
