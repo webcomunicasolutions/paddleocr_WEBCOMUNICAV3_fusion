@@ -4,6 +4,17 @@
 [![Python](https://img.shields.io/badge/python-3.x-blue.svg)](https://www.python.org/)
 [![PaddleOCR](https://img.shields.io/badge/PaddleOCR-3.x-orange.svg)](https://github.com/PaddlePaddle/PaddleOCR)
 
+> **IMPORTANTE: REQUISITOS DE CPU**
+>
+> Este proyecto requiere una CPU con soporte **AVX/AVX2**. NO funcionará en:
+> - VPS con "Common KVM processor" (virtualizados básicos)
+> - CPUs antiguas sin instrucciones AVX
+> - Algunos proveedores de hosting compartido
+>
+> **Error típico si la CPU no es compatible:** `Illegal instruction (core dumped)`
+>
+> Ver sección [Requisitos de CPU](#requisitos-de-cpu-importante) para más detalles.
+
 ## 🎯 Enfoque del Proyecto
 
 **Este proyecto toma como BASE el proyecto de Paco (PaddleOCR v3 + preprocesamiento completo) y le añade la capa API REST del proyecto original.**
@@ -139,6 +150,10 @@ curl http://localhost:8503/health
 
 ### Instalación en EasyPanel
 
+> **ADVERTENCIA:** EasyPanel con servidores virtualizados básicos (KVM genérico)
+> NO es compatible con PaddlePaddle. Antes de instalar, verifica que tu servidor
+> tenga una CPU con soporte AVX/AVX2. Ver [Requisitos de CPU](#requisitos-de-cpu-importante).
+
 #### Paso 1: Crear servicio desde GitHub
 
 1. En EasyPanel, crear nuevo servicio "App"
@@ -251,10 +266,25 @@ python3 -c "import paddle"
 ```
 
 **Solución:** Usar un servidor con CPU dedicada que soporte AVX2:
-- Hetzner (dedicated CPU)
-- DigitalOcean (dedicated CPU droplets)
-- AWS (instancias compute-optimized)
-- VPS con CPU passthrough
+
+| Proveedor | Tipo de servidor | Compatible |
+|-----------|------------------|------------|
+| Hetzner | Dedicated CPU (CPX, CCX) | Si |
+| DigitalOcean | Dedicated CPU Droplets | Si |
+| AWS | C5, C6i (compute-optimized) | Si |
+| Vultr | Dedicated Cloud | Si |
+| OVH | Bare Metal / Dedicated | Si |
+| Linode | Dedicated CPU | Si |
+| EasyPanel (KVM genérico) | Shared CPU | **NO** |
+| Otros VPS baratos | Shared/KVM básico | **Probablemente NO** |
+
+**Cómo verificar ANTES de contratar:**
+```bash
+# Preguntar al proveedor si la CPU expone instrucciones AVX2
+# O pedir un trial y ejecutar:
+cat /proc/cpuinfo | grep avx
+# Si no devuelve nada -> NO compatible
+```
 
 #### Error: `float() argument must be a string or a real number, not 'NoneType'`
 
