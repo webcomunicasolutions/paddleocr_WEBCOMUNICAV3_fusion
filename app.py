@@ -1963,6 +1963,69 @@ def dashboard():
         .badge-post {{ background: #007bff; color: white; }}
         .badge-new {{ background: #ffc107; color: #333; }}
         .badge-original {{ background: #6c757d; color: white; }}
+        .upload-form {{
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border: 2px dashed #667eea;
+        }}
+        .upload-form input[type="file"] {{
+            display: block;
+            margin: 15px 0;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            width: 100%;
+            box-sizing: border-box;
+        }}
+        .upload-form button {{
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: bold;
+        }}
+        .upload-form button:hover {{
+            opacity: 0.9;
+        }}
+        .upload-form button:disabled {{
+            background: #ccc;
+            cursor: not-allowed;
+        }}
+        #result-box {{
+            background: #1a1a2e;
+            color: #0f0;
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 20px;
+            display: none;
+            font-family: 'Courier New', monospace;
+            white-space: pre-wrap;
+            max-height: 500px;
+            overflow-y: auto;
+        }}
+        #loading {{
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }}
+        .spinner {{
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }}
+        @keyframes spin {{
+            0% {{ transform: rotate(0deg); }}
+            100% {{ transform: rotate(360deg); }}
+        }}
         code {{
             background: #f4f4f4;
             padding: 2px 6px;
@@ -2011,6 +2074,74 @@ def dashboard():
                 <div class="stat-label">Avg Time</div>
             </div>
         </div>
+
+        <h2>📤 Probar OCR</h2>
+        <div class="upload-form">
+            <form id="ocr-form" enctype="multipart/form-data">
+                <label><strong>Selecciona un archivo PDF o imagen:</strong></label>
+                <input type="file" id="file-input" name="file" accept=".pdf,.png,.jpg,.jpeg,.tiff,.bmp" required>
+                <button type="submit" id="submit-btn">🚀 Procesar OCR</button>
+            </form>
+            <div id="loading">
+                <div class="spinner"></div>
+                <p><strong>Procesando...</strong></p>
+                <p style="color:#666;">La primera vez puede tardar ~2 minutos mientras se cargan los modelos.</p>
+            </div>
+            <div id="result-box"></div>
+        </div>
+
+        <script>
+        document.getElementById('ocr-form').addEventListener('submit', async function(e) {{
+            e.preventDefault();
+
+            const fileInput = document.getElementById('file-input');
+            const submitBtn = document.getElementById('submit-btn');
+            const loading = document.getElementById('loading');
+            const resultBox = document.getElementById('result-box');
+
+            if (!fileInput.files[0]) {{
+                alert('Por favor selecciona un archivo');
+                return;
+            }}
+
+            // Mostrar loading
+            submitBtn.disabled = true;
+            loading.style.display = 'block';
+            resultBox.style.display = 'none';
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            try {{
+                const response = await fetch('/process', {{
+                    method: 'POST',
+                    body: formData
+                }});
+
+                const result = await response.json();
+
+                // Mostrar resultado
+                resultBox.style.display = 'block';
+                if (result.success) {{
+                    resultBox.style.color = '#0f0';
+                    resultBox.innerHTML = '<strong>✅ OCR Completado</strong>\\n\\n' +
+                        '<strong>Texto extraído:</strong>\\n' + (result.text || result.full_text || 'Sin texto') +
+                        '\\n\\n<strong>Tiempo:</strong> ' + (result.processing_time || 'N/A') + 's' +
+                        '\\n<strong>Páginas:</strong> ' + (result.pages_processed || 'N/A');
+                }} else {{
+                    resultBox.style.color = '#f00';
+                    resultBox.innerHTML = '<strong>❌ Error:</strong>\\n' + (result.error || 'Error desconocido');
+                }}
+            }} catch (error) {{
+                resultBox.style.display = 'block';
+                resultBox.style.color = '#f00';
+                resultBox.innerHTML = '<strong>❌ Error de conexión:</strong>\\n' + error.message;
+            }} finally {{
+                submitBtn.disabled = false;
+                loading.style.display = 'none';
+            }}
+        }});
+        </script>
 
         <h2>🎯 Características del Proyecto</h2>
         <div>
