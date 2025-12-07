@@ -1872,6 +1872,20 @@ server_stats = {
 ocr_history = []
 MAX_HISTORY = 50
 
+# ============================================================================
+# FUNCIÓN LAYOUT: Reservada para futura implementación con PP-Structure
+# ============================================================================
+# NOTA: El modo Layout básico fue probado pero no aporta mejoras significativas
+# porque el OCR no preserva las coordenadas X,Y necesarias para reconstruir
+# la estructura espacial real del documento.
+#
+# Para una mejora real en facturas/tickets se necesita PP-Structure con
+# análisis de layout que use las coordenadas de los bounding boxes.
+# Esto se implementará en el repositorio experimental.
+#
+# Por ahora, ambos modos (normal/layout) devuelven el mismo resultado.
+# ============================================================================
+
 @app.route('/')
 def dashboard():
     """Dashboard web interactivo con pestañas"""
@@ -2052,11 +2066,14 @@ def dashboard():
                         <input type="file" id="fileInput" name="file" accept=".pdf,.png,.jpg,.jpeg,.bmp,.tiff,.tif" required>
                     </div>
 
+                    <!-- LAYOUT DESHABILITADO: No aporta mejoras sin PP-Structure con coordenadas reales
                     <div class="format-selector">
                         <strong>Formato de salida:</strong><br><br>
                         <label><input type="radio" name="format" value="normal" checked> Normal (texto plano)</label>
                         <label><input type="radio" name="format" value="layout"> Layout (mantiene estructura)</label>
                     </div>
+                    -->
+                    <input type="hidden" name="format" value="normal">
 
                     <button type="submit" class="btn btn-primary" id="submitBtn">Procesar OCR</button>
                 </form>
@@ -2091,34 +2108,77 @@ def dashboard():
         <div id="docs" class="tab-content">
             <h2>Documentacion</h2>
 
-            <h3>API REST (nuevos endpoints):</h3>
+            <h3>Formatos de salida:</h3>
+            <div style="background:#e8f4f8;padding:15px;border-radius:8px;margin:15px 0;border-left:4px solid #17a2b8;">
+                <p><strong>Normal:</strong> Texto plano extraido directamente del OCR. Funciona bien para la mayoria de documentos.</p>
+                <p><strong>Layout:</strong> <span style="color:#dc3545;">(Proximamente)</span> Actualmente devuelve el mismo resultado que Normal. Se implementara con PP-Structure para reconstruir la estructura espacial real usando coordenadas de bounding boxes.</p>
+            </div>
+
+            <h3>API REST - Endpoint /process:</h3>
             <pre>
-# OCR estandar
+# Formato Normal (texto plano)
 curl -X POST http://localhost:8503/process \\
   -F "file=@documento.pdf" \\
   -F "format=normal"
 
-# Con formato layout
+# Formato Layout (estructura espacial - recomendado para facturas)
 curl -X POST http://localhost:8503/process \\
   -F "file=@documento.pdf" \\
   -F "format=layout"
 
-# Analisis detallado
+# Con estadisticas detalladas
+curl -X POST http://localhost:8503/process \\
+  -F "file=@documento.pdf" \\
+  -F "format=layout" \\
+  -F "detailed=true"
+            </pre>
+
+            <h3>Respuesta JSON:</h3>
+            <pre>
+{{
+  "success": true,
+  "text": "Texto extraido...",
+  "stats": {{"total_pages": 1, "total_blocks": 15}},
+  "processing_time": 1.234,
+  "format": "layout",
+  "timestamp": 1234567890.123
+}}
+            </pre>
+
+            <h3>Otros endpoints:</h3>
+            <pre>
+# Analisis ultra-detallado
 curl -X POST http://localhost:8503/analyze \\
   -F "file=@documento.pdf"
 
-# Estadisticas
+# Estadisticas del servidor
 curl http://localhost:8503/stats
 
-# Historial
+# Historial de procesamientos
 curl http://localhost:8503/api/history
+
+# Limpiar historial
+curl -X DELETE http://localhost:8503/api/history
             </pre>
 
             <h3>Integracion n8n (endpoint original):</h3>
             <pre>
-# Usar endpoint /ocr (compatibilidad total)
+# Usar endpoint /ocr (compatibilidad total con n8n)
 curl -X POST http://localhost:8503/ocr \\
   -F "filename=/home/n8n/in/documento.pdf"
+            </pre>
+            <p style="background:#d4edda;padding:10px;border-radius:5px;border-left:4px solid #28a745;">
+                El endpoint <code>/ocr</code> original de Paco sigue funcionando igual para mantener compatibilidad con workflows de n8n existentes.
+            </p>
+
+            <h3>Uso en n8n (HTTP Request node):</h3>
+            <pre>
+URL: http://paddleocr:8503/process
+Method: POST
+Body Content Type: Multipart Form Data
+Body Parameters:
+  - file: {{{{$binary.data}}}}  (Binary Data)
+  - format: layout
             </pre>
 
             <h3>Enlaces utiles:</h3>
@@ -2378,9 +2438,14 @@ def process():
             extracted_text = response_json.get('extracted_text', '')
             stats = response_json.get('stats', {})
 
+            # NOTA: El modo Layout está deshabilitado temporalmente.
+            # Ambos modos devuelven el mismo texto hasta que se implemente
+            # PP-Structure con coordenadas reales en el repo experimental.
+            formatted_text = extracted_text
+
             result = {
                 'success': True,
-                'text': extracted_text,
+                'text': formatted_text,
                 'stats': stats,
                 'processing_time': round(processing_time, 3),
                 'format': output_format,
@@ -2394,14 +2459,14 @@ def process():
                     'avg_confidence': stats.get('avg_confidence', 0.0)
                 }
 
-            # Guardar en historial
+            # Guardar en historial (con el texto formateado según el modo seleccionado)
             history_entry = {
                 'filename': original_filename,
                 'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
                 'processing_time': round(processing_time, 3),
                 'success': True,
-                'text': extracted_text[:2000] + ('...' if len(extracted_text) > 2000 else ''),
-                'chars': len(extracted_text),
+                'text': formatted_text[:2000] + ('...' if len(formatted_text) > 2000 else ''),
+                'chars': len(formatted_text),
                 'pages': stats.get('total_pages', 1),
                 'format': output_format
             }

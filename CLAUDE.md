@@ -147,6 +147,29 @@ All new REST endpoints follow this pattern:
 
 This ensures we leverage 100% of Paco's processing without duplicating code.
 
+## Output Formats
+
+The `/process` endpoint accepts a `format` parameter but currently both modes return the same result.
+
+### Normal (default)
+Plain text extraction. The OCR text is returned as-is.
+
+```bash
+curl -X POST http://localhost:8503/process \
+  -F "file=@factura.pdf" \
+  -F "format=normal"
+```
+
+### Layout (PENDING - returns same as Normal)
+**Status:** Not yet implemented. Currently returns the same result as Normal.
+
+**Why?** The basic text post-processing approach was tested but didn't improve results because:
+1. The OCR doesn't preserve X,Y coordinates through the pipeline
+2. Text columns get separated (concepts in one block, prices in another)
+3. Post-processing can't reconstruct spatial relationships without coordinates
+
+**Future:** Will be implemented with PP-Structure in the experimental repository, using bounding box coordinates for real layout reconstruction.
+
 ## Testing
 
 ### Test Dashboard
@@ -164,11 +187,18 @@ curl http://localhost:8503/health | jq
 curl http://localhost:8503/stats | jq
 ```
 
-### Test Process (REST)
+### Test Process - Normal format
 ```bash
 curl -X POST http://localhost:8503/process \
   -F "file=@test.pdf" \
-  -F "language=es"
+  -F "format=normal"
+```
+
+### Test Process - Layout format (for invoices)
+```bash
+curl -X POST http://localhost:8503/process \
+  -F "file=@factura.pdf" \
+  -F "format=layout"
 ```
 
 ### Test Analyze
